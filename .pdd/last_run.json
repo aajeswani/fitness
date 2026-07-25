@@ -1,0 +1,13 @@
+{
+  "2cb0209d6995bd22": {
+    "argv": [
+      "generate",
+      "fitness_app_python.prompt"
+    ],
+    "project_root": "/Users/aj/fitness",
+    "fingerprint": "3a5f19f3c01197c39739f9fe8c3098d1c96ae43b928d08cb03c30932c6be4737",
+    "git_head": "bc9d7d4774c9b9e0da96adfa4db689a034a33ef0",
+    "subcommand": "generate",
+    "timestamp": 1785019124.4254231
+  }
+}
