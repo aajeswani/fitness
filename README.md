@@ -1,10 +1,8 @@
-# Fitness Goal Diet Planner
-
-# Fitness Goal Planner
+# Product: Diet Planner 4 Fitness
 
 ## Assumptions
 
-This project supports exactly two user goals: **Weight Loss** and **Prevent Diabetes**. Users provide a short profile including age, sex, height, weight, activity level, family history, and blood-pressure history. Each request is processed as a single stateless evaluation. The application does not store, transmit, or log health information, and it does not diagnose, screen for, treat, or guarantee prevention of any medical condition.
+This project supports exactly two user goals: **Weight Loss** and **Prevent Diabetes**. Users provide a short profile including age, sex, height, weight, activity level, fitness goal, and medical history (e.g., family history, blood-pressure and chronic history, if any) Each request is processed as a single stateless evaluation. The application does not store, transmit, or log health information, and it does not diagnose, screen for, treat, or guarantee prevention of any medical condition.
 
 ## Objective
 
