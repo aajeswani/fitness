@@ -1,5 +1,12 @@
 % Generate a Python module that turns a stated health goal and a short profile
 % into a structured, safety-bounded plan.
+%
+% Canonical source for the `fitness_app` module. A stale copy once lived at
+% fitness/fitness_app_python.prompt with weaker R4/R5/R6 wording; it was deleted
+% (recoverable at git 1d7a1f2 in that directory) so this file is the only source
+% of truth. Generate with:
+%   pdd generate prompts/fitness_app_python.prompt
+% Tests live at tests/test_fitness_app.py and name the rule each one enforces.
 
 <include>context/project_preamble.prompt</include>
 
@@ -30,9 +37,12 @@ over an injected prompt callable.
   1500 kcal for male profiles, 1200 for female. Below this, a self-directed
   diet stops being safe without supervision, so the floor is a hard clamp and
   not a default.
-- Floored profile: one whose TDEE is at or below its own calorie floor. No
-  safe self-directed deficit exists; such a plan carries a zero deficit and
-  refers the user onward rather than inventing a smaller cut.
+- Floored profile: one whose TDEE is below its own calorie floor — a small,
+  older, or sedentary body that burns less in a day than the floor allows it
+  to eat. No safe self-directed deficit exists; such a plan carries a zero
+  deficit and refers the user onward rather than inventing a smaller cut. At
+  TDEE exactly equal to the floor the ordinary arithmetic already lands on the
+  floor with a zero deficit, so no special case is needed there.
 - Healthy-weight ceiling: the body mass at BMI 24.9 for the profile's height.
   24.9 rather than 25.0 so the target stays inside the healthy band under the
   rounding R3 mandates.
@@ -59,18 +69,37 @@ lower-inclusive: under 18.5 underweight, 18.5 to under 25 healthy, 25 to under
 
 R4 (MUST NOT): Never recommend a daily intake below the profile's calorie
 floor, on any input, for any goal. The clamp is unconditional — no combination
-of age, size, sex, or activity may produce a target under the floor.
+of age, size, sex, or activity may produce a target under the floor. This
+binds even when TDEE itself falls below the floor: the plan reports the floor,
+not the smaller burn, because the floor is the lowest intake this module is
+willing to name.
 
-R5 (MUST): Recommend `min(tdee, max(tdee - 500, floor))` kcal/day, and derive
-the reported deficit as `tdee - target` from that clamped figure. The nominal
-500 is an aspiration, not a reported fact: when the floor binds, the plan
-reports the smaller deficit it actually achieves, never the 500 it wanted.
+R5 (MUST): For an unfloored profile, recommend `min(tdee, max(tdee - 500,
+floor))` kcal/day and derive the reported deficit as `tdee - target` from that
+clamped figure. The nominal 500 is an aspiration, not a reported fact: when
+the floor binds, the plan reports the smaller deficit it actually achieves,
+never the 500 it wanted. For a floored profile the formula would return a
+sub-floor target and so does not apply: recommend the floor itself and report
+a deficit of zero rather than the negative figure `tdee - floor` would give.
+A floored plan says plainly that no safe self-directed deficit exists at this
+profile's daily burn and that a clinician or dietitian should set the target,
+and it carries that referral among its actions. Under no branch may the
+reported deficit be negative.
 
 R6 (MUST): Project weekly loss as `deficit * 7 / 7700` kg, and weeks-to-target
-as the kilograms above the healthy-weight ceiling divided by that rate. When
-the deficit is zero, or the profile is already at or under the ceiling, both
-the rate-derived timeline and the kilogram gap are omitted (`None`) rather than
-reported as zero, negative, or infinite.
+as the kilograms above the healthy-weight ceiling divided by that rate. Each
+of the three figures is omitted (`None`) exactly when it would otherwise be
+degenerate, and not otherwise: the rate when the deficit is zero, since a zero
+rate is not a projection; the kilogram gap when the profile is already at or
+under the ceiling, since a non-positive gap is not a distance to travel; the
+timeline when either of those holds, since it would divide by zero or count
+down a gap that does not exist. A profile under the ceiling with a real
+deficit still reports its weekly rate — it is losing at a knowable pace, it
+simply has no ceiling left to reach. No figure is ever reported as zero,
+negative, or infinite in place of being omitted. The three conditions are
+independent and must not be collapsed into one branch: a single test covering
+both the zero-deficit and the at-ceiling case will pass against an
+implementation that omits the rate whenever either holds, which R6 forbids.
 
 R7 (MUST): Set the protein target at 1.6 g per kg of current body mass,
 rounded to the nearest gram.
@@ -99,6 +128,19 @@ clock read, no argument mutation, no logging. Only `run_intake` and `main`
 touch the outside world, and only through their injected callables. Rationale:
 the arithmetic above is safety-bearing and must be reproducible under test
 without a terminal.
+
+R12 (MUST): Expose the floored-profile referral R5 requires as structured
+data, not as prose only — a `WeightLossDetail.is_floored: bool` that is true
+exactly when the profile is floored. A referral discoverable only by matching
+substrings in rendered text cannot be asserted on without coupling the test to
+wording, so the flag is the contract and the sentence is its presentation.
+Every floored plan carries both.
+
+R13 (MUST): Render every plan to non-empty text on every reachable branch,
+including a floored plan whose three projections are all `None`. Omitted
+figures are omitted from the prose, never rendered as "None", "0", "nan", or an
+empty field. Rationale: R6 makes absence routine, so absence must have a
+presentation.
 </contract_rules>
 
 <interface_notes>
@@ -119,8 +161,8 @@ without a terminal.
   exactly one of `weight_loss` / `risk` — the detail for the other goal is
   `None`, so a plan cannot carry the wrong goal's numbers.
 - `WeightLossDetail`: `target_kcal`, `deficit_kcal`, `weekly_loss_kg`,
-  `kg_above_ceiling`, `weeks_to_ceiling`, `protein_g`. The last three are
-  optional per R6.
+  `kg_above_ceiling`, `weeks_to_ceiling`, `protein_g`, `is_floored`. The three
+  projections are optional per R6; `is_floored` is the R12 flag.
 - `DiabetesRisk`: `score`, `band`, `factors: tuple[str, ...]`,
   `seven_percent_kg` (optional per R8).
 - Enums for every closed set: `Goal`, `Sex`, `Activity` (carrying its
