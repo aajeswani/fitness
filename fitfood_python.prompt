@@ -1,0 +1,236 @@
+% Generate a Python module that ranks a fast food restaurant's menu against a
+% stated health goal, using Claude to supply both the menu and the ranking.
+%
+% Generates the `fitfood` module:
+%   pdd generate fitness/fitfood_python.prompt
+% The default output path is now correct, so no --output flag is needed.
+%
+% DO NOT RENAME THIS FILE BACK TO fitness_app.prompt. It was called that, and
+% the name was wrong twice over. PDD splits <basename>_<language>.prompt, so
+% `fitness_app.prompt` parsed as basename `fitness`, language `app`; path
+% construction failed outright with "Could not determine language" before
+% generation ever started. Worse, had it parsed, the default output would have
+% overwritten fitness_app.py -- an unrelated BMR/TDEE health planner generated
+% from fitness_app_python.prompt, whose tests do `from fitness_app import ...`.
+% Two distinct modules live in this directory; keep their basenames distinct.
+%
+% Tests live at fitness/tests/test_fitfood.py. Every test names the rule id it
+% enforces. No test may touch the network: the Claude client is injected.
+
+<include>context/project_preamble.prompt</include>
+
+<preamble_overrides>
+Two clauses of the shared preamble do not apply here, and this prompt overrides
+them per its own "unless a prompt says otherwise" allowance:
+
+- Language is Python 3.9+, not 3.10+. The module must import and run on CPython
+  3.9.6, which is the system interpreter on the target machine. Use
+  `typing.Optional[X]` and `typing.List[X]` in any annotation Pydantic
+  evaluates at runtime; PEP 604 `X | None` and PEP 585 `list[X]` raise
+  `TypeError` there. `from __future__ import annotations` makes function
+  signatures lazy but does NOT rescue Pydantic model fields, which are
+  introspected eagerly at class creation.
+- Not standard library only. This module depends on `anthropic` (>=0.75) and
+  `pydantic` (>=2). Both install cleanly on 3.9.
+</preamble_overrides>
+
+<responsibility>
+Takes a free-form health goal and a fast food restaurant name, asks Claude to
+recall that restaurant's menu and rank it, and returns the three items that
+best serve the goal with a one-sentence justification each. Ranking is
+delegated entirely to the model; the module owns request construction, response
+validation, and presentation.
+</responsibility>
+
+<non_responsibilities>
+- Does not ship, bundle, or read a nutrition dataset. The menu and its numbers
+  come from the model's own knowledge, which is why R10 mandates a disclaimer.
+- Does not diagnose, screen for, or treat any medical condition, and does not
+  compute BMR, TDEE, calorie targets, or deficits. That is the unrelated
+  `fitness_app` module's job; see the collision note above.
+- Does not persist, transmit, or log the goal, the restaurant, or the result
+  anywhere beyond the single API call the user's own credentials authorize.
+- Does not read, write, or create credential files, and does not read the
+  system clock.
+- Does not modify the order Claude returns. The model's ranking is the ranking.
+</non_responsibilities>
+
+<vocabulary>
+- Ranking call: the single `messages.parse` request carrying the goal and the
+  restaurant. There is exactly one per attempt.
+- Recognized restaurant: one whose menu the model can recall well enough to
+  rank. Signalled by `Recommendations.recognized`, not inferred from an empty
+  item list by the caller.
+- Plausible result: one that passes the R12 shape check. Distinct from a
+  *valid* result, which merely satisfies the Pydantic schema. A response of
+  three items all named "x" with zero calories is valid and implausible.
+- Placeholder response: an implausible result of the specific kind R12 exists
+  to catch -- schema-conforming filler the model emits instead of real data.
+  Observed in practice, not hypothetical.
+- Sampling parameter: `temperature`, `top_p`, or `top_k`. Rejected with HTTP
+  400 by claude-opus-5. `budget_tokens` inside `thinking` is rejected the same
+  way and is treated as a sampling parameter for the purposes of R2.
+- Refusal: a response whose `stop_reason` is the string `"refusal"`. Its
+  `content` may be empty, so the check precedes any read of the body.
+- Injected client: the Anthropic client passed into `recommend`. Tests supply a
+  fake; only `main` constructs a real one.
+</vocabulary>
+
+<contract_rules>
+R1 (MUST): Send every ranking call to the model id `claude-opus-5`, exposed as
+the module-level constant `MODEL` and referenced through that constant rather
+than inlined at the call site. Rationale: a test and the request must not be
+able to disagree about which model ran.
+
+R2 (MUST NOT): Never place a sampling parameter in the request. `temperature`,
+`top_p`, `top_k`, and `thinking.budget_tokens` are each rejected with HTTP 400
+by claude-opus-5, so passing one is not a quality regression but a total
+failure. The prohibition covers nested keys, not just top-level ones, and holds
+even though the SDK's `messages.parse` signature still accepts all three --
+their presence in the signature is backward compatibility for older models and
+is not permission to use them here.
+
+R3 (MUST): Obtain the result as structured output -- `client.messages.parse(...,
+output_format=Recommendations)` -- and read it from `response.parsed_output`.
+Never parse the response text, and never ask for JSON in the prompt and
+`json.loads` it. Rationale: the schema is enforced server-side and the model
+retries on mismatch; hand-parsing discards that.
+
+R4 (MUST): Enable adaptive thinking with `thinking={"type": "adaptive"}`. Do
+not substitute the pre-4.6 `{"type": "enabled", "budget_tokens": N}` shape,
+which R2 forbids outright on this model.
+
+R5 (MUST): Return exactly three items for a recognized restaurant, ordered best
+match first, each carrying a name, an integer calorie count, integer protein
+and carb grams, and a one-sentence `why` tying the item to the stated goal.
+Preserve the model's ordering exactly -- do not re-sort, re-score, or filter.
+
+R6 (MUST NOT): Never invent a menu. When the model does not recognize the
+restaurant it sets `recognized=False` and returns an empty item list, and the
+module renders a plain "unknown restaurant" message rather than items. A
+recognized-but-empty response and an unrecognized response both render that
+message; neither may produce a fabricated item. That message MUST contain
+`recs.restaurant` verbatim and MUST NOT contain any item field or the R10
+disclaimer. Echoing the name back is what lets the user see that a typo, not
+the chain, is why they got nothing; a bare "Unknown restaurant." leaves them
+guessing what the module thought they typed, and a disclaimer about nutrition
+estimates is incoherent when no estimate was made. Rationale: a
+plausible-looking invented burrito with invented macros is the single worst
+output this module could produce, because it is indistinguishable from a real
+one.
+
+R7 (MUST): Check `response.stop_reason == "refusal"` before reading
+`response.parsed_output` or `response.content`, and return `None` on a refusal.
+On this model a refused response may carry no content at all, so a read-first
+implementation raises an opaque error instead of reporting the refusal. Report
+the refusal to the user through `main`'s injected `show` callable -- not
+stderr -- using wording containing the word "declined", then exit 1. A refusal
+is an answer about the request, not a fault in the program: the user needs to
+see it on the same channel their results would have arrived on, and the
+`show`/stderr split is what lets tests tell the two apart.
+
+R8 (MUST NOT): Never hardcode, embed, prompt for, or write out an API key.
+Construct the client as bare `anthropic.Anthropic()` and let the SDK resolve
+credentials from its own chain (`ANTHROPIC_API_KEY`, then
+`ANTHROPIC_AUTH_TOKEN`, then an `ant auth login` profile, then workload
+identity, then the default on-disk profile). An unset `ANTHROPIC_API_KEY` does
+not mean the user has no credentials, so never branch on that variable being
+absent. No string matching `sk-ant-` may appear anywhere in the module source.
+
+R9 (MUST): Catch API failures as a most-specific-first chain --
+`AuthenticationError`, then `NotFoundError`, then `RateLimitError`, then
+`APIStatusError`, then `APIConnectionError` -- each producing its own actionable
+message on stderr and a non-zero exit. A single `except Exception` is a
+contract violation: the five cases have five different remedies, and collapsing
+them tells a user with an expired token to check their network. Order matters
+because `APIStatusError` is a supertype of the three status errors above it and
+would otherwise swallow them. Each message must name the detail that makes it
+actionable, and the five must be pairwise distinct: credentials for
+`AuthenticationError`, the `MODEL` constant's value for `NotFoundError` (the
+account, not the code, is what needs changing, so the user must be told which
+model id to enable), the phrase "rate limit" for `RateLimitError`, the numeric
+`status_code` for `APIStatusError`, and the network for `APIConnectionError`.
+
+R10 (MUST): Carry the estimate disclaimer on every rendered result that
+contains items. The nutrition figures are model recall, not the chain's
+published data, and a user comparing macros to the gram must be told so. The
+text is the module-level constant `DISCLAIMER` so tests assert one string.
+
+R11 (MUST NOT): Keep `build_request`, `is_plausible`, and `render` pure -- no
+I/O, no network, no clock read, no argument mutation, no logging. Only `main`
+touches the terminal, and only through its injected `ask`/`show` callables;
+only `main` constructs a real client. Rationale: every rule above must be
+testable without a network round trip, and R2 in particular is only cheaply
+testable if request construction is a pure function returning the kwargs.
+
+R12 (MUST): Reject a placeholder response and retry the ranking call once
+before returning. A result is implausible when a recognized restaurant yields
+anything other than three items, or any item has a non-positive calorie count,
+a name of two characters or fewer, or a `why` of fifteen characters or fewer.
+An unrecognized result is never implausible -- R6 defines its empty list as
+correct, so the shape check must not fire on it. Make at most two calls total;
+if the second is also implausible, return it rather than looping or raising,
+because a degraded answer the user can see beats an exception they cannot act
+on. Rationale: this is not defensive padding -- the placeholder response is
+observed behaviour, and the schema cannot exclude it.
+
+R13 (MUST): Require both a non-empty goal and a non-empty restaurant, comparing
+after stripping surrounding whitespace, and exit non-zero with a message rather
+than calling the API on a blank input. A whitespace-only entry is blank.
+
+R14 (MUST): Exit `130` on `KeyboardInterrupt` or `EOFError` raised while
+collecting input, matching the shell convention for an interrupted program, and
+print nothing to stderr for it -- an abort the user chose is not an error.
+</contract_rules>
+
+<interface_notes>
+- `build_request(goal, restaurant) -> Dict[str, Any]` is pure and returns the
+  exact keyword arguments for `client.messages.parse`. `recommend` calls
+  `client.messages.parse(**build_request(...))` and nothing else, so a test that
+  inspects the returned mapping is inspecting the real request. This is what
+  makes R1, R2, R3, and R4 testable offline.
+- `recommend(client, goal, restaurant) -> Optional[Recommendations]` takes the
+  client as its first positional parameter. It never constructs one. Returns
+  `None` on refusal per R7; otherwise returns a `Recommendations`, retrying once
+  per R12.
+- `render(recs) -> str` returns the full user-facing text and prints nothing, so
+  tests assert on the return value. For an unknown restaurant it returns the R6
+  message, which quotes `recs.restaurant` and omits the disclaimer.
+- `main(ask=input, show=print) -> int` wires collection to ranking to rendering
+  and returns a process exit code: 0 on success, 1 on a blank input or an API
+  failure or a refusal, 130 on interrupt. It is the only symbol that constructs
+  `anthropic.Anthropic()` and the only one that catches `KeyboardInterrupt` or
+  `EOFError`. Two output channels, and which one carries what is contract, not
+  style: `show` carries anything the model said -- rendered results and the R7
+  refusal notice -- while stderr carries only the module's own failures, the R9
+  chain and the R13 blank-input message.
+- `MenuItem` and `Recommendations` are Pydantic v2 models, not dataclasses --
+  they are the structured-output schema and are passed to the SDK as
+  `output_format`. Annotate with `Optional`/`List`, never PEP 604/585 syntax,
+  per the 3.9 override above.
+- `MenuItem`: `name: str`, `calories: int`, `protein_g: int`, `carbs_g: int`,
+  `why: str`.
+- `Recommendations`: `recognized: bool`, `restaurant: str`,
+  `items: List[MenuItem]`. `recognized` is required and not defaulted -- a
+  response that omits it must fail validation rather than silently read False.
+- Every schema field carries a `Field(description=...)` that the model can act
+  on; the descriptions are part of the prompt, not documentation.
+- `MODEL`, `DISCLAIMER`, and `SYSTEM_PROMPT` are module-level constants.
+- `MAX_TOKENS = 16000`. Do not lowball it; a truncated structured response
+  fails validation and costs a full retry.
+- `SYSTEM_PROMPT` instructs concision explicitly (this model is verbose by
+  default) and bounds scope to ranking (it expands scope otherwise). It must NOT
+  contain a "double-check your work" instruction -- this model self-verifies and
+  such wording provokes over-verification.
+- `is_plausible(recs) -> bool` is public so the R12 boundary can be tested
+  directly rather than inferred from retry counts.
+</interface_notes>
+
+<pdd-interface>
+{"type":"module","module":{"name":"fitfood","functions":[
+  {"name":"build_request","signature":"(goal: str, restaurant: str) -> Dict[str, Any]","returns":"Dict[str, Any]"},
+  {"name":"recommend","signature":"(client, goal: str, restaurant: str) -> Optional[Recommendations]","returns":"Optional[Recommendations]"},
+  {"name":"is_plausible","signature":"(recs: Recommendations) -> bool","returns":"bool"},
+  {"name":"render","signature":"(recs: Recommendations) -> str","returns":"str"},
+  {"name":"main","signature":"(ask=input, show=print) -> int","returns":"int"}]}}
+</pdd-interface>
