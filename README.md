@@ -24,16 +24,13 @@ These features should be implemented as separate testable modules before being i
 
 Potential future prompt modules include:
 
-- `restaurant_locator.prompt`
-- `menu_retrieval.prompt`
-- `meal_ranking.prompt`
-- `recommendation_explanation.prompt`
+- `fitfood_python.prompt`
 
 ## Prompt File
 
 The source prompt used to define the module is:
 
-`fitness_app_python.prompt`
+`fitfood_python.prompt`
 
 ## Other Deliverables
 Presentation Deck: https://docs.google.com/presentation/d/13_ZHqNGmpSwruQ_0HdOmqKmW-rsISsMd/edit?usp=drivesdk&ouid=114297852747829232460&rtpof=true&sd=true
