@@ -2,7 +2,7 @@
 
 ## Assumptions
 
-This project supports exactly two user goals: **Weight Loss**, **Muscle Gain** and **Prevent Diabetes**. Users provide a short profile including age, sex, height, weight, activity level, fitness goal, and medical history (e.g., family history, blood-pressure and chronic history, if any) Each request is processed as a single stateless evaluation. The application does not store, transmit, or log health information, and it does not diagnose, screen for, treat, or guarantee prevention of any medical condition.
+This project supports exactly two user goals: **Weight Loss**, **Muscle Gain** **Gain Mass** and **Prevent Diabetes**. Users provide a short profile including age, sex, height, weight, activity level, fitness goal, and medical history (e.g., family history, blood-pressure and chronic history, if any) Each request is processed as a single stateless evaluation. The application does not store, transmit, or log health information, and it does not diagnose, screen for, treat, or guarantee prevention of any medical condition.
 
 ## Objective
 
