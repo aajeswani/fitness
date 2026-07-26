@@ -114,6 +114,13 @@ The demo can clearly show:
 
 The project also communicates its scope honestly. It distinguishes completed functionality from future product capabilities and does not claim clinical validation or guaranteed health outcomes.
 
+### 6. Slides
+
+https://docs.google.com/presentation/d/13_ZHqNGmpSwruQ_0HdOmqKmW-rsISsMd/edit?slide=id.p1#slide=id.p1
+
+### 7. Demo snapshot
+
+https://github.com/aajeswani/fitness/blob/main/demo.png
 
 ## Privacy and Safety
 
