@@ -1,8 +1,8 @@
-# Product: Diet Planner 4 Fitness
+# Product: Fitfood
 
 ## Assumptions
 
-This project supports exactly two user goals: **Weight Loss** and **Prevent Diabetes**. Users provide a short profile including age, sex, height, weight, activity level, fitness goal, and medical history (e.g., family history, blood-pressure and chronic history, if any) Each request is processed as a single stateless evaluation. The application does not store, transmit, or log health information, and it does not diagnose, screen for, treat, or guarantee prevention of any medical condition.
+This project supports exactly two user goals: **Weight Loss**, **Muscle Gain** and **Prevent Diabetes**. Users provide a short profile including age, sex, height, weight, activity level, fitness goal, and medical history (e.g., family history, blood-pressure and chronic history, if any) Each request is processed as a single stateless evaluation. The application does not store, transmit, or log health information, and it does not diagnose, screen for, treat, or guarantee prevention of any medical condition.
 
 ## Objective
 
@@ -34,6 +34,10 @@ Potential future prompt modules include:
 The source prompt used to define the module is:
 
 `fitness_app_python.prompt`
+
+## Other Deliverables
+Presentation Deck: https://docs.google.com/presentation/d/13_ZHqNGmpSwruQ_0HdOmqKmW-rsISsMd/edit?usp=drivesdk&ouid=114297852747829232460&rtpof=true&sd=true
+Demo Video: https://youtu.be/uE8RAju1onM?is=3TRIY5wt8_MWuRG-
 
 ## How This Project Addresses the Five Judging Criteria
 
